@@ -1,7 +1,7 @@
 ﻿#!/usr/bin/env python3
 # avatar.py
-# Р—Р°РїСѓСЃРє: python avatar.py [preset_name]
-# Р—Р°РіСЂСѓР¶Р°РµС‚ РїСЂРµСЃРµС‚ РёР· РїР°РїРєРё Prisset/ РёР»Рё Prissets/ Рё Р·Р°РїСѓСЃРєР°РµС‚ Р°РЅРёРјРёСЂРѕРІР°РЅРЅС‹Р№ Р°РІР°С‚Р°СЂ.
+# Запуск: python avatar.py [preset_name]
+# Загружает пресет из папки Prisset/ или Prissets/ и запускает анимированного аватара.
 
 import os
 import sys
@@ -10,8 +10,9 @@ import time
 import math
 import random
 import traceback
+from app_meta import APP_WINDOW_TITLE
 
-# РРјРїРѕСЂС‚РёСЂСѓРµРј pygame Рё numpy/pyaudio; РѕР±С‘СЂС‚РєРё РґР»СЏ РѕС€РёР±РѕРє РїСЂРё РѕС‚СЃСѓС‚СЃС‚РІРёРё Р±РёР±Р»РёРѕС‚РµРє
+# Импортируем pygame и numpy/pyaudio; оставляем понятные ошибки на случай отсутствия библиотек.
 try:
     import pygame as py
 except Exception as e:
@@ -29,9 +30,9 @@ except Exception as e:
 try:
     import pyaudio
 except Exception as e:
-    pyaudio = None  # Р‘СѓРґРµРј РїСЂРѕРІРµСЂСЏС‚СЊ РїРѕР·Р¶Рµ Рё РєРѕСЂСЂРµРєС‚РЅРѕ РІС‹С…РѕРґРёС‚СЊ
+    pyaudio = None  # Проверим позже и завершимся с понятным сообщением.
 
-# Р”Р»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ РѕРєРЅРѕРј РЅР° Windows (С‚РѕР»СЊРєРѕ РµСЃР»Рё РїР»Р°С‚С„РѕСЂРјР° windows)
+# Для управления окном на Windows.
 IS_WINDOWS = sys.platform.startswith("win")
 if IS_WINDOWS:
     try:
@@ -41,7 +42,7 @@ if IS_WINDOWS:
         import win32gui
         import win32.lib.win32con as win32con
     except Exception:
-        # Р•СЃР»Рё win32 РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚ вЂ” РѕСЃС‚Р°РІР»СЏРµРј, РЅРѕ Р±РµР· С„СѓРЅРєС†РёРѕРЅР°Р»Р° AlwaysOnTop/Layered
+        # Если win32 недоступен, продолжаем без AlwaysOnTop/Layered-функций.
         win32api = win32gui = win32con = None
         ctypes = None
         wintypes = None
@@ -73,10 +74,10 @@ if IS_WINDOWS and ctypes:
 
 
 # -----------------------
-# РЈС‚РёР»РёС‚С‹
+# Утилиты
 # -----------------------
 def show_console():
-    """РџРѕРєР°Р·Р°С‚СЊ РєРѕРЅСЃРѕР»СЊ (Windows)."""
+    """Показать консоль на Windows."""
     if IS_WINDOWS and ctypes:
         hwnd = ctypes.windll.kernel32.GetConsoleWindow()
         if hwnd:
@@ -84,7 +85,7 @@ def show_console():
 
 
 def hide_console():
-    """РЎРєСЂС‹С‚СЊ РєРѕРЅСЃРѕР»СЊ (Windows)."""
+    """Скрыть консоль на Windows."""
     if IS_WINDOWS and ctypes:
         hwnd = ctypes.windll.kernel32.GetConsoleWindow()
         if hwnd:
@@ -92,7 +93,7 @@ def hide_console():
 
 
 def load_json_safe(path):
-    """Р—Р°РіСЂСѓР¶Р°РµС‚ JSON, РІРѕР·РІСЂР°С‰Р°РµС‚ dict РёР»Рё РІРѕР·Р±СѓР¶РґР°РµС‚ РїРѕРЅСЏС‚РЅРѕРµ РёСЃРєР»СЋС‡РµРЅРёРµ."""
+    """Загружает JSON и возвращает dict либо выбрасывает понятное исключение."""
     with open(path, "r", encoding="utf-8") as f:
         try:
             return json.load(f)
@@ -114,7 +115,7 @@ class Avatar:
         self.preset_name = preset_name
         self.presets_dirs = presets_dirs
 
-        # РџРѕРёСЃРє РєР°С‚Р°Р»РѕРіР° РїСЂРµСЃРµС‚Р° (РїРѕРґРґРµСЂР¶РёРІР°РµРј РІР°СЂРёР°РЅС‚С‹ Prisset Рё Prissets)
+        # Ищем каталог пресета; поддерживаем и Prisset, и Prissets.
         self.preset_path = None
         for d in self.presets_dirs:
             candidate = os.path.join(d, preset_name)
@@ -125,7 +126,7 @@ class Avatar:
         if not self.preset_path:
             raise FileNotFoundError(f"РќРµ РЅР°Р№РґРµРЅ РїСЂРµСЃРµС‚ '{preset_name}' РІ РїР°РїРєР°С… {presets_dirs}")
 
-        # РћР¶РёРґР°РµРјС‹Рµ РїСѓС‚Рё
+        # Основные пути внутри пресета.
         self.config_path = os.path.join(self.preset_path, "Config.json")
         self.sprites_path = os.path.join(self.preset_path, "Sprites")
 
@@ -134,13 +135,13 @@ class Avatar:
         if not os.path.isdir(self.sprites_path):
             raise FileNotFoundError(f"РџР°РїРєР° Sprites РЅРµ РЅР°Р№РґРµРЅР° РІ {self.preset_path}")
 
-        # Р—Р°РіСЂСѓР¶Р°РµРј РєРѕРЅС„РёРі (РІР°Р»РёРґР°С†РёСЏ РЅРёР¶Рµ)
+        # Загружаем конфиг; валидация и нормализация идут ниже.
         self.config = load_json_safe(self.config_path)
 
-        # РџСЂРѕСЃС‚Р°РІРёРј Р·РЅР°С‡РµРЅРёСЏ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ Рё СЂР°СЃРїР°СЂСЃРёРј РєРѕРЅС„РёРі
+        # Разбираем конфиг и заполняем недостающие значения.
         self._parse_config()
 
-        # РРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј Pygame (display) РґРѕ Р·Р°РіСЂСѓР·РєРё РёР·РѕР±СЂР°Р¶РµРЅРёР№
+        # Инициализируем Pygame display до загрузки изображений.
         py.init()
         self.hwnd = None
         self.window_pos = None
@@ -158,29 +159,29 @@ class Avatar:
             except Exception as e:
                 print("РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёРєРѕРЅРєСѓ:", e)
 
-        # РЎРѕР·РґР°С‘Рј СЌРєСЂР°РЅ Р”Рћ Р·Р°РіСЂСѓР·РєРё СЃРїСЂР°Р№С‚РѕРІ вЂ” СЌС‚Рѕ РЅСѓР¶РЅРѕ РґР»СЏ .convert_alpha()
+        # Создаём окно до загрузки спрайтов; это нужно для .convert_alpha().
         self.screen = py.display.set_mode(self.window_size, py.NOFRAME)
-        py.display.set_caption(f"PNG2B - {self.preset_name}")
+        py.display.set_caption(f"{APP_WINDOW_TITLE} - {self.preset_name}")
 
         self._configure_window()
 
         self._load_sprites()
 
-        # РРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј Р°СѓРґРёРѕ (РјРёРєСЂРѕС„РѕРЅ)
+        # Инициализируем аудио и микрофон.
         self._init_audio()
 
-        # Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Рµ СЃРѕСЃС‚РѕСЏРЅРёСЏ РґР»СЏ Р°РЅРёРјР°С†РёРё
+        # Подготавливаем служебное состояние для анимаций.
         self._init_state()
         self.avatar_surface = py.Surface(self.window_size, py.SRCALPHA)
 
-        # РџРѕРєР°Р·С‹РІР°РµРј/РїСЂСЏС‡РµРј РєРѕРЅСЃРѕР»СЊ РІ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РѕС‚ DebugMode
+        # В режиме отладки оставляем консоль, иначе скрываем её.
         if not self.debug:
             hide_console()
         else:
             show_console()
 
     # -----------------------
-    # РџР°СЂСЃРёРЅРі Рё РґРµС„РѕР»С‚С‹
+    # Парсинг конфига и значения по умолчанию
     # -----------------------
     def _parse_config(self):
         c = self.config
@@ -189,12 +190,12 @@ class Avatar:
         win = c.get("Window", {})
         size = win.get("Size", [750])
         if not isinstance(size, (list, tuple)):
-            # РґРѕРїСѓСЃС‚РёС‚СЊ РѕРґРёРЅ int, РїСЂРµРІСЂР°С‚РёС‚СЊ РІ СЃРїРёСЃРѕРє
+            # Поддерживаем старый формат с одним числом.
             size = [size]
         if len(size) == 1:
-            self.window_size = (int(size[0]), int(size[0]))
+            self.window_size = (max(1, int(size[0])), max(1, int(size[0])))
         else:
-            self.window_size = (int(size[0]), int(size[1]))
+            self.window_size = (max(1, int(size[0])), max(1, int(size[1])))
 
         self.scale = float(win.get("Scale", 1.0))
         self.reflect = bool(win.get("Reflect", False))
@@ -211,13 +212,13 @@ class Avatar:
         self.max_v = float(mic.get("MaxVolume", 1600))
         self.background_noise = float(mic.get("BackgroundNoise", 50))
         device_idx = mic.get("DeviceIndex")
-        self.device_index = int(device_idx) if device_idx is not None else None  # None = РґРµС„РѕР»С‚
+        self.device_index = int(device_idx) if device_idx is not None else None  # None = устройство по умолчанию
 
         # Blink
         blink = c.get("Blink", {})
         interval = blink.get("Interval", [4, 8])
         if isinstance(interval, str):
-            # РїРѕРґРґРµСЂР¶РєР° С„РѕСЂРјС‹ "0.1,3"
+            # Поддержка старого строкового формата "0.1,3".
             try:
                 a, b = [float(x.strip()) for x in interval.split(",")]
                 interval = [a, b]
@@ -243,6 +244,10 @@ class Avatar:
 
         # Movement
         move = c.get("Movement", {})
+        mode = str(move.get("Mode", "")).strip().capitalize()
+        if mode not in {"Squash", "Bounce", "Static"}:
+            mode = "Squash" if bool(move.get("DynamicSquashEnabled", True)) else "Bounce"
+        self.movement_mode = mode
         self.jump_amp = float(move.get("JumpAmplitude", 14))
         vs = move.get("VerticalSway", [0, 0])
         hs = move.get("HorizontalSway", [0, 0])
@@ -254,7 +259,7 @@ class Avatar:
             self.sway_h = (float(hs[0]), float(hs[1]))
         except Exception:
             self.sway_h = (0.0, 0.0)
-        self.dynamic_squash_enabled = bool(move.get("DynamicSquashEnabled", True))
+        self.dynamic_squash_enabled = self.movement_mode == "Squash"
         self.dynamic_squash_amount = float(move.get("DynamicSquashAmount", 0.08))
         self.dynamic_squash_amount = clamp(self.dynamic_squash_amount, 0.0, 0.35)
 
@@ -264,11 +269,11 @@ class Avatar:
         self.mouth_close_delay_enabled = bool(mouth.get("UseCloseDelay", False))
         self.mouth_close_delay = float(mouth.get("CloseDelay", 0.35))
 
-        # LipSync improvements
+        # Улучшения LipSync
         lip = c.get("LipSync", {})
-        self.lip_smoothing = float(lip.get("Smoothing", 0.7))          # 0.0вЂ“1.0, С‡РµРј РІС‹С€Рµ вЂ” С‚РµРј РїР»Р°РІРЅРµРµ
-        self.hyst_high = float(lip.get("HysteresisHigh", 120.0))      # РїРѕСЂРѕРі РЅР°С‡Р°Р»Р° СЂРµС‡Рё
-        self.hyst_low = float(lip.get("HysteresisLow", 50.0))         # РїРѕСЂРѕРі СѓРґРµСЂР¶Р°РЅРёСЏ СЂРµС‡Рё (РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РЅРёР¶Рµ high)       
+        self.lip_smoothing = float(lip.get("Smoothing", 0.7))          # 0.0-1.0: чем выше, тем плавнее реакция.
+        self.hyst_high = float(lip.get("HysteresisHigh", 120.0))      # Порог начала речи.
+        self.hyst_low = float(lip.get("HysteresisLow", 50.0))         # Порог удержания речи; должен быть ниже high.
 
         # Debug
         self.debug = bool(c.get("DebugMode", False))
@@ -369,34 +374,70 @@ class Avatar:
         )
 
     # -----------------------
-    # Р—Р°РіСЂСѓР·РєР° СЃРїСЂР°Р№С‚РѕРІ
+    # Загрузка спрайтов
     # -----------------------
+    def _transform_sprite(self, img):
+        if img is None:
+            return None
+
+        transformed = img
+        if self.reflect:
+            transformed = py.transform.flip(transformed, True, False)
+
+        return transformed
+
+    def _fit_sprite_groups(self):
+        all_frames = []
+        for frames in (self.mouth_frames, self.blink_frames, self.emo_frames):
+            all_frames.extend(frame for frame in frames if frame is not None)
+        if self.cm_frame is not None:
+            all_frames.append(self.cm_frame)
+
+        if not all_frames:
+            return
+
+        max_w = max(frame.get_width() for frame in all_frames)
+        max_h = max(frame.get_height() for frame in all_frames)
+        if max_w < 1 or max_h < 1:
+            return
+
+        fit_scale = min(self.window_size[0] / max_w, self.window_size[1] / max_h)
+        final_scale = max(0.01, fit_scale * self.scale)
+
+        def scale_frame(frame):
+            if frame is None:
+                return None
+            target_w = max(1, int(round(frame.get_width() * final_scale)))
+            target_h = max(1, int(round(frame.get_height() * final_scale)))
+            if (target_w, target_h) == frame.get_size():
+                return frame
+            return py.transform.smoothscale(frame, (target_w, target_h))
+
+        self.mouth_frames = [scale_frame(frame) for frame in self.mouth_frames]
+        self.blink_frames = [scale_frame(frame) for frame in self.blink_frames]
+        self.emo_frames = [scale_frame(frame) for frame in self.emo_frames]
+        self.cm_frame = scale_frame(self.cm_frame)
+
     def _load_sprites(self):
         """
-        Р—Р°РіСЂСѓР¶Р°РµС‚:
+        Загружает:
           - mouth_frames: s_0, s_1, ...
           - blink_frames: b_0, b_1, ...
           - emo_frames: eb_0, eb_1, ...
-          - cm_frame: cm.png (closed mouth)
-        Р•СЃР»Рё РєР°РєРёРµ-С‚Рѕ РіСЂСѓРїРїС‹ РЅРµ РЅР°Р№РґРµРЅС‹ вЂ” РІС‹РґР°С‘С‚ РїСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ, РЅРѕ РїС‹С‚Р°РµС‚СЃСЏ РїСЂРѕРґРѕР»Р¶Р°С‚СЊ.
+          - cm_frame: cm.png (закрытый рот)
+
+        Если какая-то группа не найдена, печатает предупреждение и пытается продолжить работу.
         """
-        def load_and_scale(path):
+        def load_sprite(path):
             try:
                 img = py.image.load(path).convert_alpha()
             except Exception as e:
-                # Р•СЃР»Рё convert_alpha() РІСЃС‘ Р¶Рµ РїР°РґР°РµС‚ вЂ” РїСЂРѕР±СѓРµРј Р±РµР· РЅРµРіРѕ
+                # Если convert_alpha() не сработал, пробуем без него.
                 try:
                     img = py.image.load(path)
                 except Exception as e2:
                     raise RuntimeError(f"РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёР·РѕР±СЂР°Р¶РµРЅРёРµ {path}: {e2}")
-            # РњР°СЃС€С‚Р°Р±РёСЂРѕРІР°РЅРёРµ
-            if self.scale != 1.0:
-                w, h = img.get_size()
-                img = py.transform.smoothscale(img, (max(1, int(w * self.scale)), max(1, int(h * self.scale))))
-            # РћС‚СЂР°Р¶РµРЅРёРµ
-            if self.reflect:
-                img = py.transform.flip(img, True, False)
-            return img
+            return self._transform_sprite(img)
 
         files = sorted(os.listdir(self.sprites_path))
         self.mouth_frames = []
@@ -411,39 +452,41 @@ class Avatar:
             full = os.path.join(self.sprites_path, f)
             try:
                 if name.startswith("s_"):
-                    self.mouth_frames.append(load_and_scale(full))
+                    self.mouth_frames.append(load_sprite(full))
                 elif name.startswith("b_"):
-                    self.blink_frames.append(load_and_scale(full))
+                    self.blink_frames.append(load_sprite(full))
                 elif name.startswith("eb_"):
-                    self.emo_frames.append(load_and_scale(full))
+                    self.emo_frames.append(load_sprite(full))
                 elif name == "cm":
-                    self.cm_frame = load_and_scale(full)
+                    self.cm_frame = load_sprite(full)
             except Exception as e:
-                # РќРµ РѕСЃС‚Р°РЅР°РІР»РёРІР°РµРјСЃСЏ РЅР° РїРµСЂРІРѕР№ РѕС€РёР±РєРµ Р·Р°РіСЂСѓР·РєРё РєРѕРЅРєСЂРµС‚РЅРѕРіРѕ С„Р°Р№Р»Р°
+                # Не падаем на первой ошибке загрузки конкретного файла.
                 print(f"РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ: РЅРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ {full}: {e}")
 
-        # РџСЂРѕРІРµСЂРєРё Рё fallbacks
+        # Проверки и fallback-сценарии.
         if not self.mouth_frames:
             raise FileNotFoundError(f"Р’ {self.sprites_path} РЅРµ РЅР°Р№РґРµРЅС‹ РєР°РґСЂС‹ СЂС‚Р° (s_0, s_1, ...).")
 
-        # Р•СЃР»Рё РЅРµС‚ blink_frames вЂ” СЌС‚Рѕ РЅРµ С„Р°С‚Р°Р»СЊРЅРѕ, РїСЂРѕСЃС‚Рѕ РјРѕСЂРіР°РЅРёРµ РЅРµ Р±СѓРґРµС‚
+        # Если blink_frames нет, это не фатально: просто отключаем моргание.
         if not self.blink_frames:
             print("РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ: РєР°РґСЂС‹ РјРѕСЂРіР°РЅРёСЏ (b_*) РЅРµ РЅР°Р№РґРµРЅС‹ вЂ” РјРѕСЂРіР°РЅРёРµ РѕС‚РєР»СЋС‡РµРЅРѕ.")
 
-        # Р•СЃР»Рё СЌРјРѕС†РёСЏ РІРєР»СЋС‡РµРЅР°, РЅРѕ РЅРµС‚ eb вЂ” РёСЃРїРѕР»СЊР·СѓРµРј b_*
+        # Если эмоциональная анимация включена, но eb_* нет, пробуем использовать b_*.
         if self.emo_enabled and not self.emo_frames:
             if self.blink_frames:
                 print("РРЅС„Рѕ: СЌРјРѕС†РёРѕРЅР°Р»СЊРЅС‹Рµ РєР°РґСЂС‹ eb_* РЅРµ РЅР°Р№РґРµРЅС‹ вЂ” РёСЃРїРѕР»СЊР·СѓРµРј b_* РґР»СЏ СЌРјРѕС†РёРё.")
                 self.emo_frames = list(self.blink_frames)
-                # Р•СЃР»Рё durations РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‚ вЂ” РёСЃРїРѕР»СЊР·СѓРµРј blink_durations
+                # Если durations отсутствуют, используем blink_durations.
                 if not self.emo_durations:
                     self.emo_durations = list(self.blink_durations)
             else:
                 print("РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ: СЌРјРѕС†РёРѕРЅР°Р»СЊРЅР°СЏ Р°РЅРёРјР°С†РёСЏ РІРєР»СЋС‡РµРЅР°, РЅРѕ РЅРµС‚ РЅРё eb_*, РЅРё b_* вЂ” СЌРјРѕС†РёСЏ РѕС‚РєР»СЋС‡РµРЅР°.")
                 self.emo_enabled = False
 
+        self._fit_sprite_groups()
+
     # -----------------------
-    # РђСѓРґРёРѕ
+    # Аудио
     # -----------------------
     def _init_audio(self):
         if pyaudio is None:
@@ -454,7 +497,7 @@ class Avatar:
             kwargs = {
                 "format": pyaudio.paInt16,
                 "channels": 1,
-                "rate": 44100,  # СѓРЅРёС„РёС†РёСЂСѓРµРј СЃ РјРµРЅРµРґР¶РµСЂРѕРј РґР»СЏ РѕРґРёРЅР°РєРѕРІС‹С… СѓСЂРѕРІРЅРµР№ (Р±С‹Р»Рѕ 48000)
+                "rate": 44100,  # Держим тот же rate, что и в менеджере, для одинакового уровня.
                 "input": True,
                 "frames_per_buffer": 1024
             }
@@ -476,11 +519,11 @@ class Avatar:
             return 0.0
 
     # -----------------------
-    # РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ СЃРѕСЃС‚РѕСЏРЅРёР№
+    # Инициализация состояния
     # -----------------------
 
     def _blit_centered_to(self, target_surface, img, x_offset=0, y_offset=0):
-        """Р РёСЃСѓРµС‚ img, С†РµРЅС‚СЂРёСЂСѓСЏ РЅР° target_surface СЃ РѕС„С„СЃРµС‚РѕРј."""
+        """Рисует изображение по центру target_surface с указанным смещением."""
         if img is None:
             return
         w, h = img.get_size()
@@ -516,7 +559,7 @@ class Avatar:
     def _init_state(self):
         self.clock = py.time.Clock()
 
-        # Р‘Р°Р·РѕРІС‹Рµ СЃРѕСЃС‚РѕСЏРЅРёСЏ
+        # Базовые состояния.
         self.last_blink_time = time.time()
         self.blink_active = False
         self.blink_start = 0
@@ -532,15 +575,15 @@ class Avatar:
         self.mouth_index = 0
         self.last_talk_time = time.time()
 
-        # Р’СЂРµРјСЏ СЃС‚Р°СЂС‚Р° (РґР»СЏ sway)
+        # Время старта для sway-анимации.
         self.t0 = time.time()
 
         self.smoothed_loudness = 0.0
         self.was_talking = False
-        self.last_raw_loudness = 0.0  # РґР»СЏ delta_l РІ СЌРјРѕС†РёРё
+        self.last_raw_loudness = 0.0  # Нужно для вычисления delta_l в эмоциональной анимации.
         self.dynamic_squash_level = 0.0
     # -----------------------
-    # РџРµСЂРµРјРµС‰РµРЅРёРµ РѕРєРЅР° Р·Р° РјС‹С€СЊСЋ
+    # Перемещение окна мышью
     # -----------------------
 
     def move_window(self):
@@ -564,7 +607,7 @@ class Avatar:
             pass
 
     # -----------------------
-    # РћСЃРЅРѕРІРЅРѕР№ С†РёРєР»
+    # Основной цикл
     # -----------------------
     def run(self):
         try:
@@ -579,22 +622,22 @@ class Avatar:
 
                 now = time.time()
 
-                # === РЈР›РЈР§РЁР•РќРќР«Р™ Р РђРЎР§РЃРў Р“Р РћРњРљРћРЎРўР ===
+                # === Расчёт громкости ===
                 raw_loudness = self._safe_read_mic() - self.background_noise
                 raw_loudness = max(0.0, raw_loudness)
 
-                # РЎРіР»Р°Р¶РёРІР°РЅРёРµ EMA РґР»СЏ РѕР±С‰РµР№ РіСЂРѕРјРєРѕСЃС‚Рё
+                # EMA-сглаживание общей громкости.
                 self.smoothed_loudness = (
                     self.smoothed_loudness * self.lip_smoothing +
                     raw_loudness * (1.0 - self.lip_smoothing)
                 )
                 loudness = clamp(self.smoothed_loudness, 0.0, self.max_v)
 
-                # Delta РґР»СЏ СЌРјРѕС†РёРё вЂ” РЅР° raw, С‡С‚РѕР±С‹ Р»СѓС‡С€Рµ СЂРµР°РіРёСЂРѕРІР°С‚СЊ РЅР° СЂРµР·РєРёРµ РІСЃРїР»РµСЃРєРё
+                # Delta считаем по raw, чтобы лучше ловить резкие всплески.
                 delta_l = raw_loudness - self.last_raw_loudness
                 self.last_raw_loudness = raw_loudness
 
-                # Р“РёСЃС‚РµСЂРµР·РёСЃ РґР»СЏ РґРµС‚РµРєС†РёРё СЂРµС‡Рё
+                # Гистерезис для определения факта речи.
                 if loudness > self.hyst_high:
                     talking = True
                 elif loudness > self.hyst_low:
@@ -606,7 +649,7 @@ class Avatar:
                 if talking:
                     self.last_talk_time = now
 
-                # === Р­РњРћР¦РРЇ ===
+                # === Эмоция ===
                 if self.emo_enabled and delta_l > self.emo_threshold and not self.emo_active:
                     self.emo_active = True
                     self.emo_start = now
@@ -618,7 +661,7 @@ class Avatar:
                     if now - self.emo_start > total:
                         self.emo_active = False
 
-                # === РњРћР Р“РђРќРР• ===
+                # === Моргание ===
                 if not self.emo_active and not self.blink_active and (now - self.last_blink_time) > random.uniform(*self.blink_interval):
                     if self.blink_frames:
                         self.blink_active = True
@@ -640,36 +683,38 @@ class Avatar:
                                 self.blink_frame_idx = i
                                 break
 
-                # === Р РћРў ===
+                # === Рот ===
                 if (now - self.last_mouth_frame_time) >= self.mouth_frame_interval:
                     idx = int((loudness / max(1.0, self.max_v)) * (len(self.mouth_frames) - 1))
                     self.mouth_index = clamp(idx, 0, len(self.mouth_frames) - 1)
                     self.last_mouth_frame_time = now
 
-                target_squash = (loudness / max(1.0, self.max_v)) if talking else 0.0
+                speech_intensity = (loudness / max(1.0, self.max_v)) if talking else 0.0
+                target_squash = speech_intensity if self.movement_mode == "Squash" else 0.0
                 self.dynamic_squash_level = (
                     self.dynamic_squash_level * 0.8 +
                     target_squash * 0.2
                 )
 
-                # === Р”Р’РР–Р•РќРРЇ (sway + jump) ===
+                # === Движение (sway + jump) ===
                 elapsed_total = now - self.t0
-                y_sway = self.sway_v[0] * math.sin(elapsed_total * self.sway_v[1] * 2 * math.pi) if self.sway_v[1] != 0 else 0
-                x_sway = self.sway_h[0] * math.sin(elapsed_total * self.sway_h[1] * 2 * math.pi) if self.sway_h[1] != 0 else 0
-                y_jump = int((loudness / max(1.0, self.max_v)) * self.jump_amp)
+                movement_enabled = self.movement_mode != "Static"
+                y_sway = self.sway_v[0] * math.sin(elapsed_total * self.sway_v[1] * 2 * math.pi) if movement_enabled and self.sway_v[1] != 0 else 0
+                x_sway = self.sway_h[0] * math.sin(elapsed_total * self.sway_h[1] * 2 * math.pi) if movement_enabled and self.sway_h[1] != 0 else 0
+                y_jump = int(speech_intensity * self.jump_amp) if self.movement_mode == "Bounce" else 0
                 y_offset = int(y_sway - y_jump)
                 x_offset = int(x_sway)
 
-                # === РћРўР РРЎРћР’РљРђ ===
+                # === Отрисовка ===
                 if not self.use_alpha_window:
                     self.screen.fill(self.chromakey_color if self.use_chromakey else (0, 0, 0))
-                self.avatar_surface.fill((0, 0, 0, 0))  # РїСЂРѕР·СЂР°С‡РЅС‹Р№ surface РґР»СЏ Р°РІР°С‚Р°СЂР°
+                self.avatar_surface.fill((0, 0, 0, 0))  # Прозрачная поверхность для сборки аватара.
 
-                # --- Р±Р°Р·РѕРІС‹Р№ СЃР»РѕР№ ---
+                # --- Базовый слой ---
                 base_img = self.mouth_frames[0]
                 self._blit_centered_to(self.avatar_surface, base_img, x_offset, -y_offset)
 
-                # --- СЂРѕС‚ ---
+                # --- Рот ---
                 if talking:
                     self._blit_centered_to(self.avatar_surface, self.mouth_frames[self.mouth_index], x_offset, -y_offset)
                 else:
@@ -678,7 +723,7 @@ class Avatar:
                     elif self.cm_frame:
                         self._blit_centered_to(self.avatar_surface, self.cm_frame, x_offset, -y_offset)
 
-                # --- РіР»Р°Р·Р° ---
+                # --- Глаза ---
                 if self.emo_active and self.emo_frames:
                     elapsed_e = now - self.emo_start
                     acc = 0.0
@@ -697,7 +742,7 @@ class Avatar:
                 # --- dynamic squash ---
                 final_avatar = self.apply_dynamic_squash(self.avatar_surface.copy(), self.dynamic_squash_level)
 
-                # --- РІС‹РІРѕРґ РЅР° СЌРєСЂР°РЅ ---
+                # --- Вывод на экран ---
                 if self.use_alpha_window:
                     self._push_alpha_frame(final_avatar)
                 else:
@@ -705,7 +750,7 @@ class Avatar:
                     py.display.update()
                 self.clock.tick(60)
 
-                # --- РѕС‚Р»Р°РґРѕС‡РЅС‹Р№ РІС‹РІРѕРґ ---
+                # --- Отладочный вывод ---
                 if self.debug:
                     print(f"raw={raw_loudness:5.0f} smooth={loudness:5.0f} d={delta_l:5.0f} "
                         f"mouth={self.mouth_index} talk={talking} emo={self.emo_active} "
@@ -720,12 +765,12 @@ class Avatar:
             self.exit()
 
     # -----------------------
-    # Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Рµ
+    # Вспомогательные методы
     # -----------------------
     def _blit_centered(self, img, x_offset=0, y_offset=0):
         """
-        Р РёСЃСѓРµС‚ РёР·РѕР±СЂР°Р¶РµРЅРёРµ, С†РµРЅС‚СЂРёСЂСѓСЏ РµРіРѕ РѕС‚РЅРѕСЃРёС‚РµР»СЊРЅРѕ РѕРєРЅР° Рё СЃРґРІРёРіР°СЏ РЅР° x_offset,y_offset.
-        y_offset РѕС‚СЂР°Р¶Р°РµС‚ РІРµСЂС‚РёРєР°Р»СЊРЅРѕРµ СЃРјРµС‰РµРЅРёРµ (РїРѕР»РѕР¶РёС‚РµР»СЊРЅРѕРµ вЂ” РІРЅРёР·), РІ РєРѕРґРµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ -y_offset РґР»СЏ "РїРѕРґРїСЂС‹РіРёРІР°РЅРёСЏ".
+        Рисует изображение по центру окна со смещением x_offset/y_offset.
+        Положительный y_offset смещает изображение вниз.
         """
         if img is None:
             return
@@ -735,7 +780,7 @@ class Avatar:
         self.screen.blit(img, (cx, cy))
 
     # -----------------------
-    # Р—Р°РІРµСЂС€РµРЅРёРµ
+    # Завершение работы
     # -----------------------
     def exit(self):
         try:
@@ -770,14 +815,14 @@ class Avatar:
                 py.quit()
             except Exception:
                 pass
-            # Р•СЃР»Рё РјС‹ РІ РѕС‚Р»Р°РґРѕС‡РЅРѕРј СЂРµР¶РёРјРµ вЂ” РѕСЃС‚Р°РІРёРј РєРѕРЅСЃРѕР»СЊ РѕС‚РєСЂС‹С‚РѕР№, РёРЅР°С‡Рµ РїРѕРїС‹С‚Р°РµРјСЃСЏ Р·Р°РєСЂС‹С‚СЊ
+            # В debug-режиме консоль оставляем открытой, иначе стараемся скрыть.
             if not self.debug:
                 hide_console()
             sys.exit(0)
 
 
 # -----------------------
-# РўРѕС‡РєР° РІС…РѕРґР°
+# Точка входа
 # -----------------------
 def main():
     if len(sys.argv) < 2:

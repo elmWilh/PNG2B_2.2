@@ -1,7 +1,9 @@
-import sys
-import subprocess
 import importlib
 import os
+import subprocess
+import sys
+
+from app_meta import APP_NAME, APP_VERSION
 
 # Список обязательных библиотек
 REQUIRED_LIBS = [
@@ -11,6 +13,7 @@ REQUIRED_LIBS = [
     "pywin32",  # обязательно для Windows
 ]
 
+
 def install_package(package):
     print(f"Устанавливаем {package}...")
     try:
@@ -19,11 +22,13 @@ def install_package(package):
         print(f"Не удалось установить {package}. Установите вручную.")
         sys.exit(1)
 
+
 def check_and_install():
+    print(f"Запуск {APP_NAME} v{APP_VERSION}")
     for lib in REQUIRED_LIBS:
         print(f"Проверка библиотеки: {lib}...")
         try:
-            # Для pywin32 проверяем импорт win32api
+            # Для pywin32 проверяем импорт win32api/win32gui.
             if lib == "pywin32":
                 import win32api
                 import win32gui
@@ -32,6 +37,7 @@ def check_and_install():
         except ImportError:
             print(f"Библиотека {lib} не найдена. Устанавливаем...")
             install_package(lib)
+
 
 if __name__ == "__main__":
     check_and_install()
