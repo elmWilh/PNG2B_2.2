@@ -1,0 +1,61 @@
+{
+  "Window": {
+    "Size": [
+      720.0,
+      720.0
+    ],
+    "Scale": 0.25,
+    "Reflect": false,
+    "UseChromaKey": false,
+    "ChromaKeyColor": [
+      0.0,
+      255.0,
+      0.0
+    ],
+    "AlwaysOnTop": true
+  },
+  "Microphone": {
+    "MaxVolume": 1700,
+    "BackgroundNoise": 72,
+    "DeviceIndex": 2
+  },
+  "LipSync": {
+    "Smoothing": 0.85,
+    "HysteresisHigh": 130,
+    "HysteresisLow": 50
+  },
+  "Blink": {
+    "Interval": [
+      4.0,
+      8.0
+    ],
+    "Durations": [
+      0.2
+    ]
+  },
+  "EmotionBlink": {
+    "Enabled": true,
+    "Threshold": 1502,
+    "Durations": [
+      0.75
+    ]
+  },
+  "Movement": {
+    "JumpAmplitude": -15,
+    "DynamicSquashEnabled": true,
+    "DynamicSquashAmount": 0.08,
+    "VerticalSway": [
+      0.0,
+      0.0
+    ],
+    "HorizontalSway": [
+      0.0,
+      0.0
+    ]
+  },
+  "Mouth": {
+    "FrameInterval": 0.05,
+    "UseCloseDelay": true,
+    "CloseDelay": 0.35
+  }
+}
