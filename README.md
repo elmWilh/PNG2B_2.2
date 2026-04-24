@@ -98,8 +98,3 @@ The repository already contains at least one migrated preset:
 
 - [`presets/SlipperOff/config.json`](presets/SlipperOff/config.json)
 - [`presets/SlipperOff/avatar`](presets/SlipperOff/avatar)
-
-## Notes
-
-- Some UI strings in the current codebase still contain broken encoding and can be cleaned up separately.
-- The project does not currently include a pinned `requirements.txt`.
