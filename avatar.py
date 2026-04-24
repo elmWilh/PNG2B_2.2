@@ -1,7 +1,7 @@
 ﻿#!/usr/bin/env python3
 # avatar.py
 # Запуск: python avatar.py [preset_name]
-# Загружает пресет из папки Prisset/ или Prissets/ и запускает анимированного аватара.
+# Загружает пресет из папки presets/ и запускает анимированного аватара.
 
 import os
 import sys
@@ -11,6 +11,7 @@ import math
 import random
 import traceback
 from app_meta import APP_WINDOW_TITLE
+from app_paths import LEGACY_PRESET_DIRS, PRESET_AVATAR_DIR, PRESET_CONFIG_NAME
 
 # Импортируем pygame и numpy/pyaudio; оставляем понятные ошибки на случай отсутствия библиотек.
 try:
@@ -111,11 +112,11 @@ def clamp(v, a, b):
 class Avatar:
     SUPPORTED_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".gif"}
 
-    def __init__(self, preset_name: str, presets_dirs=("Prisset", "Prissets")):
+    def __init__(self, preset_name: str, presets_dirs=LEGACY_PRESET_DIRS):
         self.preset_name = preset_name
         self.presets_dirs = presets_dirs
 
-        # Ищем каталог пресета; поддерживаем и Prisset, и Prissets.
+        # Ищем каталог пресета; сначала новая структура, затем legacy-папки.
         self.preset_path = None
         for d in self.presets_dirs:
             candidate = os.path.join(d, preset_name)
@@ -127,13 +128,13 @@ class Avatar:
             raise FileNotFoundError(f"РќРµ РЅР°Р№РґРµРЅ РїСЂРµСЃРµС‚ '{preset_name}' РІ РїР°РїРєР°С… {presets_dirs}")
 
         # Основные пути внутри пресета.
-        self.config_path = os.path.join(self.preset_path, "Config.json")
-        self.sprites_path = os.path.join(self.preset_path, "Sprites")
+        self.config_path = os.path.join(self.preset_path, PRESET_CONFIG_NAME)
+        self.sprites_path = os.path.join(self.preset_path, PRESET_AVATAR_DIR)
 
         if not os.path.isfile(self.config_path):
-            raise FileNotFoundError(f"Config.json РЅРµ РЅР°Р№РґРµРЅ РІ {self.preset_path}")
+            raise FileNotFoundError(f"{PRESET_CONFIG_NAME} РЅРµ РЅР°Р№РґРµРЅ РІ {self.preset_path}")
         if not os.path.isdir(self.sprites_path):
-            raise FileNotFoundError(f"РџР°РїРєР° Sprites РЅРµ РЅР°Р№РґРµРЅР° РІ {self.preset_path}")
+            raise FileNotFoundError(f"РџР°РїРєР° {PRESET_AVATAR_DIR} РЅРµ РЅР°Р№РґРµРЅР° РІ {self.preset_path}")
 
         # Загружаем конфиг; валидация и нормализация идут ниже.
         self.config = load_json_safe(self.config_path)

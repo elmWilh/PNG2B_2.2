@@ -33,8 +33,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from app_meta import APP_PRESET_MANAGER_TITLE, APP_USER_MODEL_ID
+from app_paths import PRESETS_DIR, PRESET_AVATAR_DIR, PRESET_CONFIG_NAME
 
-PRISSETS_DIR = "Prissets"
 ICON_PATH = "PNG2B.ico"
 CATEGORY_ORDER = ["Window", "Microphone", "LipSync", "Blink", "EmotionBlink", "Movement", "Mouth"]
 
@@ -945,9 +945,9 @@ class PresetManager(QMainWindow):
 
     def load_presets(self):
         self.preset_list.clear()
-        os.makedirs(PRISSETS_DIR, exist_ok=True)
-        for name in sorted(os.listdir(PRISSETS_DIR)):
-            if os.path.isdir(os.path.join(PRISSETS_DIR, name)):
+        os.makedirs(PRESETS_DIR, exist_ok=True)
+        for name in sorted(os.listdir(PRESETS_DIR)):
+            if os.path.isdir(os.path.join(PRESETS_DIR, name)):
                 self.preset_list.addItem(name)
 
         if self.preset_list.count() and self.current_preset_name:
@@ -992,9 +992,9 @@ class PresetManager(QMainWindow):
             return
 
         preset_name = item.text()
-        path = os.path.join(PRISSETS_DIR, preset_name, "Config.json")
+        path = os.path.join(PRESETS_DIR, preset_name, PRESET_CONFIG_NAME)
         if not os.path.isfile(path):
-            QMessageBox.warning(self, "Ошибка", "Config.json не найден")
+            QMessageBox.warning(self, "Ошибка", f"{PRESET_CONFIG_NAME} не найден")
             return
 
         with open(path, "r", encoding="utf-8") as file:
@@ -1002,7 +1002,7 @@ class PresetManager(QMainWindow):
 
         self._normalize_config_data()
         self.current_preset_label.setText(preset_name)
-        self.current_path_label.setText(os.path.abspath(os.path.join(PRISSETS_DIR, preset_name)))
+        self.current_path_label.setText(os.path.abspath(os.path.join(PRESETS_DIR, preset_name)))
         self._populate_sections()
         self.set_unsaved(False)
 
@@ -1022,7 +1022,7 @@ class PresetManager(QMainWindow):
 
         self._normalize_config_data()
 
-        path = os.path.join(PRISSETS_DIR, item.text(), "Config.json")
+        path = os.path.join(PRESETS_DIR, item.text(), PRESET_CONFIG_NAME)
         with open(path, "w", encoding="utf-8") as file:
             json.dump(self.config_data, file, indent=2, ensure_ascii=False)
 
@@ -1034,17 +1034,17 @@ class PresetManager(QMainWindow):
             return
 
         name = name.strip()
-        path = os.path.join(PRISSETS_DIR, name)
+        path = os.path.join(PRESETS_DIR, name)
         if os.path.exists(path):
             QMessageBox.warning(self, "Ошибка", "Пресет с таким именем уже существует.")
             return
 
         os.makedirs(path, exist_ok=True)
-        os.makedirs(os.path.join(path, "Sprites"), exist_ok=True)
+        os.makedirs(os.path.join(path, PRESET_AVATAR_DIR), exist_ok=True)
 
         default_config = self._default_config_template()
 
-        with open(os.path.join(path, "Config.json"), "w", encoding="utf-8") as file:
+        with open(os.path.join(path, PRESET_CONFIG_NAME), "w", encoding="utf-8") as file:
             json.dump(default_config, file, indent=2, ensure_ascii=False)
 
         self.load_presets()
@@ -1060,11 +1060,11 @@ class PresetManager(QMainWindow):
         base_name = f"{item.text()}_Copy"
         name = base_name
         index = 1
-        while os.path.exists(os.path.join(PRISSETS_DIR, name)):
+        while os.path.exists(os.path.join(PRESETS_DIR, name)):
             name = f"{base_name}_{index}"
             index += 1
 
-        shutil.copytree(os.path.join(PRISSETS_DIR, item.text()), os.path.join(PRISSETS_DIR, name))
+        shutil.copytree(os.path.join(PRESETS_DIR, item.text()), os.path.join(PRESETS_DIR, name))
         self.load_presets()
         items = self.preset_list.findItems(name, Qt.MatchExactly)
         if items:
@@ -1082,7 +1082,7 @@ class PresetManager(QMainWindow):
             QMessageBox.Yes | QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
-            shutil.rmtree(os.path.join(PRISSETS_DIR, item.text()))
+            shutil.rmtree(os.path.join(PRESETS_DIR, item.text()))
             self.current_preset_name = None
             self.load_presets()
             self.load_config(None)
@@ -1098,8 +1098,8 @@ class PresetManager(QMainWindow):
             return
 
         new_name = new_name.strip()
-        old_path = os.path.join(PRISSETS_DIR, old_name)
-        new_path = os.path.join(PRISSETS_DIR, new_name)
+        old_path = os.path.join(PRESETS_DIR, old_name)
+        new_path = os.path.join(PRESETS_DIR, new_name)
 
         if os.path.exists(new_path):
             QMessageBox.warning(self, "Ошибка", "Пресет с таким именем уже существует.")
@@ -1116,7 +1116,7 @@ class PresetManager(QMainWindow):
         item = self.preset_list.currentItem()
         if not item:
             return
-        path = os.path.abspath(os.path.join(PRISSETS_DIR, item.text()))
+        path = os.path.abspath(os.path.join(PRESETS_DIR, item.text()))
         if sys.platform == "win32":
             os.startfile(path)
         elif sys.platform == "darwin":
