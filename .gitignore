@@ -29,3 +29,4 @@ desktop.ini
 
 # Local runtime files
 *.log
+presets/*/runtime_control.json

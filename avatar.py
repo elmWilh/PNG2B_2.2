@@ -11,7 +11,7 @@ import math
 import random
 import traceback
 from app_meta import APP_WINDOW_TITLE
-from app_paths import LEGACY_PRESET_DIRS, PRESET_AVATAR_DIR, PRESET_CONFIG_NAME
+from app_paths import LEGACY_PRESET_DIRS, PRESET_AVATAR_DIR, PRESET_CONFIG_NAME, PRESET_EMOTIONS_DIR, PRESET_RUNTIME_CONTROL_NAME
 
 # Импортируем pygame и numpy/pyaudio; оставляем понятные ошибки на случай отсутствия библиотек.
 try:
@@ -130,6 +130,8 @@ class Avatar:
         # Основные пути внутри пресета.
         self.config_path = os.path.join(self.preset_path, PRESET_CONFIG_NAME)
         self.sprites_path = os.path.join(self.preset_path, PRESET_AVATAR_DIR)
+        self.emotions_path = os.path.join(self.preset_path, PRESET_EMOTIONS_DIR)
+        self.runtime_control_path = os.path.join(self.preset_path, PRESET_RUNTIME_CONTROL_NAME)
 
         if not os.path.isfile(self.config_path):
             raise FileNotFoundError(f"{PRESET_CONFIG_NAME} РЅРµ РЅР°Р№РґРµРЅ РІ {self.preset_path}")
@@ -173,6 +175,7 @@ class Avatar:
 
         # Подготавливаем служебное состояние для анимаций.
         self._init_state()
+        self._init_runtime_state()
         self.avatar_surface = py.Surface(self.window_size, py.SRCALPHA)
 
         # В режиме отладки оставляем консоль, иначе скрываем её.
@@ -263,6 +266,16 @@ class Avatar:
         self.dynamic_squash_enabled = self.movement_mode == "Squash"
         self.dynamic_squash_amount = float(move.get("DynamicSquashAmount", 0.08))
         self.dynamic_squash_amount = clamp(self.dynamic_squash_amount, 0.0, 0.35)
+
+        petpet = c.get("PetPet", {})
+        self.petpet_enabled = bool(petpet.get("Enabled", True))
+        self.petpet_amplitude = clamp(float(petpet.get("Amplitude", 0.12)), 0.0, 0.45)
+        self.petpet_cycle_duration = max(0.15, float(petpet.get("CycleDuration", 0.45)))
+        self.petpet_hand_offset_x = float(petpet.get("HandOffsetX", 0.0))
+        self.petpet_hand_offset_y = float(petpet.get("HandOffsetY", 0.0))
+        self.petpet_hand_scale = max(0.1, float(petpet.get("HandScale", 1.0)))
+        self.petpet_frame_count = max(1, int(petpet.get("FrameCount", 5)))
+        self.petpet_event_duration = max(0.2, float(petpet.get("EventDuration", 2.0)))
 
         # Mouth
         mouth = c.get("Mouth", {})
@@ -374,6 +387,139 @@ class Avatar:
             win32con.ULW_ALPHA,
         )
 
+    def _default_runtime_control(self):
+        return {
+            "debug_visible": bool(self.debug),
+            "events": {
+                "petpet_live": False,
+                "reaction_live": False,
+                "selected_reaction": "",
+            },
+            "commands": {
+                "force_blink": 0.0,
+                "force_emotion": 0.0,
+                "trigger_petpet": 0.0,
+                "trigger_reaction": 0.0,
+            },
+        }
+
+    def _init_runtime_state(self):
+        self.runtime_poll_interval = 0.2
+        self.last_runtime_poll = 0.0
+        self.last_runtime_command_marks = {}
+        self.petpet_live_enabled = False
+        self.selected_reaction = ""
+        self.petpet_event_until = 0.0
+        self.petpet_event_started = 0.0
+        if not hasattr(self, "petpet_frames"):
+            self.petpet_frames = []
+        self._apply_runtime_control(self._load_runtime_control())
+
+    def _load_runtime_control(self):
+        control = self._default_runtime_control()
+        if not os.path.isfile(self.runtime_control_path):
+            return control
+
+        try:
+            with open(self.runtime_control_path, "r", encoding="utf-8") as file:
+                raw = json.load(file)
+        except Exception:
+            return control
+
+        raw_events = raw.get("events", {})
+        control["debug_visible"] = bool(raw.get("debug_visible", control["debug_visible"]))
+        control["events"]["petpet_live"] = bool(raw_events.get("petpet_live", False))
+        control["events"]["reaction_live"] = bool(raw_events.get("reaction_live", control["events"]["petpet_live"]))
+        selected_reaction = str(raw_events.get("selected_reaction", "")).strip().lower()
+        if not selected_reaction and (
+            control["events"]["reaction_live"] or control["events"]["petpet_live"]
+        ):
+            selected_reaction = "petpet"
+        control["events"]["selected_reaction"] = selected_reaction
+        raw_commands = raw.get("commands", {})
+        for key in control["commands"]:
+            try:
+                legacy_key = "trigger_petpet" if key == "trigger_reaction" else key
+                control["commands"][key] = float(raw_commands.get(key, raw_commands.get(legacy_key, 0.0)))
+            except Exception:
+                control["commands"][key] = 0.0
+        return control
+
+    def _apply_runtime_control(self, control, now=None):
+        if now is None:
+            now = time.time()
+
+        events = control.get("events", {})
+        self.selected_reaction = str(events.get("selected_reaction", "")).strip().lower()
+        self.petpet_live_enabled = bool(events.get("reaction_live", events.get("petpet_live", False))) and self.selected_reaction == "petpet"
+
+        debug_visible = bool(control.get("debug_visible", self.debug))
+        self.debug = debug_visible
+        if self.debug:
+            show_console()
+        else:
+            hide_console()
+
+        commands = control.get("commands", {})
+        self._consume_runtime_command(commands, "force_blink", lambda: self._trigger_blink(now))
+        self._consume_runtime_command(commands, "force_emotion", lambda: self._trigger_emotion(now))
+        self._consume_runtime_command(commands, "trigger_petpet", lambda: self._trigger_petpet(now))
+        self._consume_runtime_command(commands, "trigger_reaction", lambda: self._trigger_selected_reaction(now))
+
+    def _consume_runtime_command(self, commands, key, callback):
+        try:
+            marker = float(commands.get(key, 0.0))
+        except Exception:
+            marker = 0.0
+
+        if marker <= 0.0:
+            return
+        if self.last_runtime_command_marks.get(key) == marker:
+            return
+
+        self.last_runtime_command_marks[key] = marker
+        callback()
+
+    def _poll_runtime_control(self, now):
+        if (now - self.last_runtime_poll) < self.runtime_poll_interval:
+            return
+        self.last_runtime_poll = now
+        self._apply_runtime_control(self._load_runtime_control(), now=now)
+
+    def _trigger_blink(self, now):
+        if not self.blink_frames:
+            return
+        self.emo_active = False
+        self.blink_active = True
+        self.blink_start = now
+        self.blink_frame_idx = 0
+        self.last_blink_time = now
+
+    def _trigger_emotion(self, now):
+        if not self.emo_frames and self.blink_frames:
+            self.emo_frames = list(self.blink_frames)
+            if not self.emo_durations:
+                self.emo_durations = list(self.blink_durations)
+        if not self.emo_frames:
+            return
+        self.blink_active = False
+        self.emo_active = True
+        self.emo_start = now
+        self.last_blink_time = now
+
+    def _trigger_selected_reaction(self, now):
+        if self.selected_reaction == "petpet":
+            self._trigger_petpet(now)
+
+    def _trigger_petpet(self, now):
+        if not self.petpet_frames:
+            self._load_petpet_sprite()
+        if not self.petpet_enabled or not self.petpet_frames:
+            return
+        self.selected_reaction = "petpet"
+        self.petpet_event_started = now
+        self.petpet_event_until = max(self.petpet_event_until, now + self.petpet_event_duration)
+
     # -----------------------
     # Загрузка спрайтов
     # -----------------------
@@ -418,6 +564,141 @@ class Avatar:
         self.blink_frames = [scale_frame(frame) for frame in self.blink_frames]
         self.emo_frames = [scale_frame(frame) for frame in self.emo_frames]
         self.cm_frame = scale_frame(self.cm_frame)
+
+    def _resolve_petpet_sprite_path(self):
+        candidate = os.path.join(self.emotions_path, "petpet", "sprite.png")
+        if os.path.isfile(candidate):
+            return candidate
+
+        legacy_path = os.path.join(self.sprites_path, "PetPet", "sprite.png")
+        if os.path.isfile(legacy_path):
+            return legacy_path
+        root_path = "sprite.png"
+        if os.path.isfile(root_path):
+            return root_path
+        return None
+
+    def _load_petpet_sprite(self):
+        self.petpet_frames = []
+        petpet_path = self._resolve_petpet_sprite_path()
+        if not petpet_path:
+            return
+
+        try:
+            sprite = py.image.load(petpet_path).convert_alpha()
+        except Exception:
+            try:
+                sprite = py.image.load(petpet_path)
+            except Exception:
+                return
+
+        sprite = self._transform_sprite(sprite)
+        width, height = sprite.get_size()
+        frame_count = max(1, self.petpet_frame_count)
+        frame_width = width // frame_count
+        if frame_width < 1 or height < 1:
+            return
+
+        for index in range(frame_count):
+            rect = py.Rect(index * frame_width, 0, frame_width, height)
+            if rect.right > width:
+                break
+            frame = py.Surface((rect.width, rect.height), py.SRCALPHA)
+            frame.blit(sprite, (0, 0), rect)
+            self.petpet_frames.append(frame)
+
+    def _is_petpet_active(self, now):
+        return self.petpet_enabled and bool(self.petpet_frames) and (
+            self.petpet_live_enabled or self.petpet_event_until > now
+        )
+
+    def _petpet_frame_state(self, now):
+        if not self._is_petpet_active(now):
+            return None
+
+        elapsed = max(0.0, now - (self.petpet_event_started if self.petpet_event_started > 0 else now))
+        if self.petpet_live_enabled:
+            elapsed = max(0.0, now - self.t0)
+        cycle_progress = (elapsed % self.petpet_cycle_duration) / self.petpet_cycle_duration
+        frame_index = int(cycle_progress * len(self.petpet_frames)) % len(self.petpet_frames)
+        frame = self.petpet_frames[frame_index]
+
+        avatar_scales = (
+            (1.00, 1.00, 0.00, 0.00),
+            (1.03, 0.94, 0.00, 0.02),
+            (1.07, 0.84, 0.00, 0.08),
+            (1.04, 0.90, 0.00, 0.04),
+            (1.00, 1.00, 0.00, 0.00),
+        )
+        hand_offsets = (
+            (0.10, 0.02),
+            (0.09, -0.01),
+            (0.08, -0.04),
+            (0.09, -0.01),
+            (0.10, 0.02),
+        )
+        scale_x, scale_y, offset_x_ratio, offset_y_ratio = avatar_scales[frame_index % len(avatar_scales)]
+        hand_offset_x_ratio, hand_offset_y_ratio = hand_offsets[frame_index % len(hand_offsets)]
+        scale_y = max(0.55, 1.0 - ((1.0 - scale_y) * (self.petpet_amplitude / 0.12 if self.petpet_amplitude > 0 else 0.0)))
+        scale_x = max(0.7, 1.0 + ((scale_x - 1.0) * (self.petpet_amplitude / 0.12 if self.petpet_amplitude > 0 else 0.0)))
+
+        return {
+            "frame": frame,
+            "index": frame_index,
+            "avatar_scale_x": scale_x,
+            "avatar_scale_y": scale_y,
+            "avatar_offset_x": offset_x_ratio,
+            "avatar_offset_y": offset_y_ratio,
+            "hand_offset_x": hand_offset_x_ratio,
+            "hand_offset_y": hand_offset_y_ratio,
+        }
+
+    def _apply_petpet_overlay(self, surface, now):
+        state = self._petpet_frame_state(now)
+        if state is None:
+            return surface
+
+        bounds = surface.get_bounding_rect()
+        if bounds.width < 1 or bounds.height < 1:
+            return surface
+
+        avatar = py.Surface((bounds.width, bounds.height), py.SRCALPHA)
+        avatar.blit(surface, (0, 0), bounds)
+        scaled_avatar = py.transform.smoothscale(
+            avatar,
+            (
+                max(1, int(round(bounds.width * state["avatar_scale_x"]))),
+                max(1, int(round(bounds.height * state["avatar_scale_y"]))),
+            ),
+        )
+
+        overlay = py.Surface(surface.get_size(), py.SRCALPHA)
+        avatar_x = bounds.x + (bounds.width - scaled_avatar.get_width()) // 2 + int(surface.get_width() * state["avatar_offset_x"])
+        avatar_y = bounds.y + (bounds.height - scaled_avatar.get_height()) // 2 + int(surface.get_height() * state["avatar_offset_y"])
+        overlay.blit(scaled_avatar, (avatar_x, avatar_y))
+
+        hand = state["frame"]
+        target_hand_w = max(1, int(bounds.width * 0.62 * self.petpet_hand_scale))
+        target_hand_h = max(1, int(bounds.height * 0.32 * self.petpet_hand_scale))
+        hand_scale = min(target_hand_w / hand.get_width(), target_hand_h / hand.get_height())
+        hand_size = (
+            max(1, int(round(hand.get_width() * hand_scale))),
+            max(1, int(round(hand.get_height() * hand_scale))),
+        )
+        hand = py.transform.smoothscale(hand, hand_size)
+
+        hand_x = int(
+            bounds.x + (bounds.width - hand.get_width()) / 2
+            + bounds.width * state["hand_offset_x"]
+            + self.petpet_hand_offset_x
+        )
+        hand_y = int(
+            bounds.y - hand.get_height() * 0.12
+            + bounds.height * state["hand_offset_y"]
+            + self.petpet_hand_offset_y
+        )
+        overlay.blit(hand, (hand_x, hand_y))
+        return overlay
 
     def _load_sprites(self):
         """
@@ -485,6 +766,7 @@ class Avatar:
                 self.emo_enabled = False
 
         self._fit_sprite_groups()
+        self._load_petpet_sprite()
 
     # -----------------------
     # Аудио
@@ -622,6 +904,7 @@ class Avatar:
                             self.move_window()
 
                 now = time.time()
+                self._poll_runtime_control(now)
 
                 # === Расчёт громкости ===
                 raw_loudness = self._safe_read_mic() - self.background_noise
@@ -742,6 +1025,7 @@ class Avatar:
 
                 # --- dynamic squash ---
                 final_avatar = self.apply_dynamic_squash(self.avatar_surface.copy(), self.dynamic_squash_level)
+                final_avatar = self._apply_petpet_overlay(final_avatar, now)
 
                 # --- Вывод на экран ---
                 if self.use_alpha_window:

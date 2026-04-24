@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 
 import numpy as np
 import pyaudio
@@ -33,7 +34,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from app_meta import APP_PRESET_MANAGER_TITLE, APP_USER_MODEL_ID
-from app_paths import PRESETS_DIR, PRESET_AVATAR_DIR, PRESET_CONFIG_NAME
+from app_paths import PRESETS_DIR, PRESET_AVATAR_DIR, PRESET_CONFIG_NAME, PRESET_EMOTIONS_DIR, PRESET_RUNTIME_CONTROL_NAME
 
 ICON_PATH = "PNG2B.ico"
 CATEGORY_ORDER = ["Window", "Microphone", "LipSync", "Blink", "EmotionBlink", "Movement", "Mouth"]
@@ -262,6 +263,7 @@ class PresetManager(QMainWindow):
         self.load_presets()
         self.set_unsaved(False)
         self.refresh_avatar_status()
+        self._sync_developer_panel()
 
     def _apply_styles(self):
         self.setStyleSheet(
@@ -370,6 +372,15 @@ class PresetManager(QMainWindow):
             QLabel#MiniLabel {
                 color: #64748b;
                 font-size: 11px;
+            }
+            QLabel#DevHint {
+                color: #667085;
+                font-size: 12px;
+            }
+            QGroupBox#DeveloperBox {
+                border-style: dashed;
+                border-color: #c7d2e3;
+                background: #fbfdff;
             }
             QWidget#FieldRow, QWidget#TupleEditor, QWidget#MicLevelWidget {
                 background: transparent;
@@ -506,9 +517,64 @@ class PresetManager(QMainWindow):
         self.avatar_status_label = QLabel("Аватар остановлен")
         self.avatar_status_label.setObjectName("BadgeStopped")
 
+        self.btn_dev_mode = QPushButton("Режим разработчика")
+        self.btn_dev_mode.setCheckable(True)
+        self.btn_dev_mode.toggled.connect(self._toggle_developer_panel)
+
         header_layout.addLayout(title_column, 1)
+        header_layout.addWidget(self.btn_dev_mode, 0, Qt.AlignTop)
         header_layout.addWidget(self.avatar_status_label, 0, Qt.AlignTop)
         header_layout.addWidget(self.unsaved_label, 0, Qt.AlignTop)
+
+        self.developer_box = QGroupBox("Инструменты разработчика")
+        self.developer_box.setObjectName("DeveloperBox")
+        self.developer_box.setVisible(False)
+        developer_layout = QVBoxLayout(self.developer_box)
+        developer_layout.setSpacing(10)
+
+        developer_hint = QLabel("Живое управление отладкой и тестами для текущего пресета.")
+        developer_hint.setObjectName("DevHint")
+        developer_hint.setWordWrap(True)
+
+        self.dev_debug_checkbox = QCheckBox("Включить DebugMode для текущего пресета")
+        self.dev_debug_checkbox.stateChanged.connect(self._on_debug_mode_changed)
+        self.dev_live_petpet_checkbox = QCheckBox("PetPet в режиме реального времени")
+        self.dev_live_petpet_checkbox.stateChanged.connect(self._on_live_petpet_changed)
+        self.dev_live_reaction_checkbox = self.dev_live_petpet_checkbox
+
+        reaction_row = QHBoxLayout()
+        reaction_row.setSpacing(8)
+        reaction_label = QLabel("Реакция для теста")
+        self.dev_reaction_combo = QComboBox()
+        self.dev_reaction_combo.currentIndexChanged.connect(self._on_selected_reaction_changed)
+        reaction_row.addWidget(reaction_label)
+        reaction_row.addWidget(self.dev_reaction_combo, 1)
+
+        buttons_row = QHBoxLayout()
+        buttons_row.setSpacing(8)
+        self.btn_test_blink = QPushButton("Тест: моргание")
+        self.btn_test_emotion = QPushButton("Тест: эмоция")
+        self.btn_test_petpet = QPushButton("Тест: PetPet")
+        self.btn_test_blink.clicked.connect(lambda: self._send_runtime_command("force_blink"))
+        self.btn_test_emotion.clicked.connect(lambda: self._send_runtime_command("force_emotion"))
+        self.btn_test_petpet.clicked.connect(lambda: self._send_runtime_command("trigger_petpet"))
+        self.btn_test_reaction = QPushButton("Тестировать текущую реакцию")
+        self.btn_test_reaction.clicked.connect(self._trigger_selected_reaction)
+        buttons_row.addWidget(self.btn_test_blink)
+        buttons_row.addWidget(self.btn_test_emotion)
+        buttons_row.addWidget(self.btn_test_petpet)
+        buttons_row.addWidget(self.btn_test_reaction)
+
+        self.dev_runtime_status = QLabel("Запустите аватар, чтобы прогонять one-shot тесты.")
+        self.dev_runtime_status.setObjectName("DevHint")
+        self.dev_runtime_status.setWordWrap(True)
+
+        developer_layout.addWidget(developer_hint)
+        developer_layout.addWidget(self.dev_debug_checkbox)
+        developer_layout.addWidget(self.dev_live_petpet_checkbox)
+        developer_layout.addLayout(reaction_row)
+        developer_layout.addLayout(buttons_row)
+        developer_layout.addWidget(self.dev_runtime_status)
 
         self.sections_container = QWidget()
         self.sections_layout = QVBoxLayout(self.sections_container)
@@ -521,6 +587,7 @@ class PresetManager(QMainWindow):
         scroll.setWidget(self.sections_container)
 
         right_layout.addWidget(header_widget)
+        right_layout.addWidget(self.developer_box)
         right_layout.addWidget(scroll, 1)
 
         splitter.addWidget(sidebar)
@@ -566,6 +633,7 @@ class PresetManager(QMainWindow):
             mode = "Squash"
         movement["Mode"] = mode
         movement["DynamicSquashEnabled"] = mode == "Squash"
+        self.config_data["DebugMode"] = bool(self.config_data.get("DebugMode", False))
 
     def _default_config_template(self):
         return {
@@ -596,6 +664,16 @@ class PresetManager(QMainWindow):
                 "Threshold": 2500,
                 "Durations": [0.75],
             },
+            "PetPet": {
+                "Enabled": True,
+                "Amplitude": 0.12,
+                "CycleDuration": 0.45,
+                "HandOffsetX": 0,
+                "HandOffsetY": 0,
+                "HandScale": 1.0,
+                "FrameCount": 5,
+                "EventDuration": 2.0,
+            },
             "Movement": {
                 "Mode": "Squash",
                 "JumpAmplitude": -14,
@@ -608,7 +686,213 @@ class PresetManager(QMainWindow):
                 "UseCloseDelay": True,
                 "CloseDelay": 0.35,
             },
+            "DebugMode": False,
         }
+
+    def _current_preset_dir(self):
+        item = self.preset_list.currentItem()
+        if item is None:
+            return None
+        return os.path.join(PRESETS_DIR, item.text())
+
+    def _runtime_control_path(self):
+        preset_dir = self._current_preset_dir()
+        if preset_dir is None:
+            return None
+        return os.path.join(preset_dir, PRESET_RUNTIME_CONTROL_NAME)
+
+    def _reactions_dir(self):
+        preset_dir = self._current_preset_dir()
+        if preset_dir is None:
+            return None
+        return os.path.join(preset_dir, PRESET_EMOTIONS_DIR)
+
+    def _discover_reactions(self):
+        preset_dir = self._current_preset_dir()
+        if preset_dir is None:
+            return []
+
+        reactions = []
+        reactions_dir = self._reactions_dir()
+        if reactions_dir and os.path.isdir(reactions_dir):
+            for entry in sorted(os.listdir(reactions_dir)):
+                reaction_dir = os.path.join(reactions_dir, entry)
+                if os.path.isdir(reaction_dir):
+                    reactions.append(entry)
+
+        legacy_petpet_path = os.path.join(preset_dir, PRESET_AVATAR_DIR, "PetPet", "sprite.png")
+        if os.path.isfile(legacy_petpet_path) and "petpet" not in reactions:
+            reactions.append("petpet")
+
+        return reactions
+
+    def _default_runtime_control(self):
+        return {
+            "debug_visible": bool(self.config_data.get("DebugMode", False)),
+            "events": {
+                "petpet_live": False,
+                "reaction_live": False,
+                "selected_reaction": "",
+            },
+            "commands": {
+                "force_blink": 0.0,
+                "force_emotion": 0.0,
+                "trigger_petpet": 0.0,
+                "trigger_reaction": 0.0,
+            },
+        }
+
+    def _load_runtime_control(self):
+        control = self._default_runtime_control()
+        path = self._runtime_control_path()
+        if path is None or not os.path.isfile(path):
+            return control
+
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                raw = json.load(file)
+        except Exception:
+            return control
+
+        raw_events = raw.get("events", {})
+        control["debug_visible"] = bool(raw.get("debug_visible", control["debug_visible"]))
+        control["events"]["petpet_live"] = bool(raw_events.get("petpet_live", False))
+        control["events"]["reaction_live"] = bool(raw_events.get("reaction_live", control["events"]["petpet_live"]))
+        selected_reaction = str(raw_events.get("selected_reaction", "")).strip().lower()
+        if not selected_reaction and (
+            control["events"]["reaction_live"] or control["events"]["petpet_live"]
+        ):
+            selected_reaction = "petpet"
+        control["events"]["selected_reaction"] = selected_reaction
+        commands = raw.get("commands", {})
+        for key in control["commands"]:
+            try:
+                legacy_key = "trigger_petpet" if key == "trigger_reaction" else key
+                control["commands"][key] = float(commands.get(key, commands.get(legacy_key, control["commands"][key])))
+            except Exception:
+                control["commands"][key] = 0.0
+        return control
+
+    def _save_runtime_control(self, control):
+        path = self._runtime_control_path()
+        if path is None:
+            return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump(control, file, indent=2, ensure_ascii=False)
+
+    def _sync_developer_panel(self):
+        has_preset = self.preset_list.currentItem() is not None and bool(self.config_data)
+        control = self._load_runtime_control() if has_preset else self._default_runtime_control()
+        reactions = self._discover_reactions() if has_preset else []
+        selected_reaction = control["events"].get("selected_reaction", "")
+        if reactions and selected_reaction not in reactions:
+            selected_reaction = reactions[0]
+            control["events"]["selected_reaction"] = selected_reaction
+            if has_preset:
+                self._save_runtime_control(control)
+
+        self.dev_debug_checkbox.blockSignals(True)
+        self.dev_live_petpet_checkbox.blockSignals(True)
+        self.dev_reaction_combo.blockSignals(True)
+        self.dev_debug_checkbox.setChecked(bool(self.config_data.get("DebugMode", False)) if has_preset else False)
+        self.dev_live_petpet_checkbox.setChecked(
+            bool(control["events"].get("reaction_live", control["events"].get("petpet_live", False)))
+            if has_preset else False
+        )
+        self.dev_live_petpet_checkbox.setText(
+            f"Удерживать реакцию: {selected_reaction}" if selected_reaction else "Удерживать выбранную реакцию"
+        )
+        self.dev_reaction_combo.clear()
+        for reaction_name in reactions:
+            self.dev_reaction_combo.addItem(reaction_name, reaction_name)
+        if selected_reaction:
+            combo_index = self.dev_reaction_combo.findData(selected_reaction)
+            if combo_index >= 0:
+                self.dev_reaction_combo.setCurrentIndex(combo_index)
+        self.dev_debug_checkbox.blockSignals(False)
+        self.dev_live_petpet_checkbox.blockSignals(False)
+        self.dev_reaction_combo.blockSignals(False)
+
+        running = self.process is not None and self.process.poll() is None
+        has_reaction = bool(reactions)
+        self.dev_debug_checkbox.setEnabled(has_preset)
+        self.dev_live_petpet_checkbox.setEnabled(has_preset and has_reaction)
+        self.dev_reaction_combo.setEnabled(has_preset and has_reaction)
+        self.btn_test_blink.setEnabled(has_preset and running)
+        self.btn_test_emotion.setEnabled(has_preset and running)
+        self.btn_test_petpet.setVisible(False)
+        self.btn_test_reaction.setEnabled(has_preset and running and has_reaction)
+
+        if not has_preset:
+            self.dev_runtime_status.setText("Выберите пресет, чтобы пользоваться developer-инструментами.")
+        elif not has_reaction:
+            self.dev_runtime_status.setText("У текущего пресета нет доступных реакций в папке emotions.")
+        elif running:
+            self.dev_runtime_status.setText("Аватар запущен: live-переключатели и тестовые команды работают сразу.")
+        else:
+            self.dev_runtime_status.setText("Аватар не запущен: live-переключатели сохранятся, а one-shot тесты недоступны.")
+
+    def _toggle_developer_panel(self, checked):
+        self.developer_box.setVisible(bool(checked))
+
+    def _on_debug_mode_changed(self, state):
+        if not self.config_data:
+            return
+        self.config_data["DebugMode"] = bool(state)
+        self._mark_unsaved()
+
+        control = self._load_runtime_control()
+        control["debug_visible"] = bool(state)
+        self._save_runtime_control(control)
+
+    def _on_live_petpet_changed(self, state):
+        if not self.config_data:
+            return
+        control = self._load_runtime_control()
+        control["events"]["petpet_live"] = bool(state)
+        control["events"]["reaction_live"] = bool(state)
+        if not control["events"].get("selected_reaction"):
+            control["events"]["selected_reaction"] = "petpet"
+        self._save_runtime_control(control)
+
+    def _on_live_reaction_changed(self, state):
+        self._on_live_petpet_changed(state)
+
+    def _on_selected_reaction_changed(self, index):
+        if not self.config_data or index < 0:
+            return
+        reaction_name = self.dev_reaction_combo.itemData(index) or self.dev_reaction_combo.currentText()
+        control = self._load_runtime_control()
+        control["events"]["selected_reaction"] = str(reaction_name).strip().lower()
+        if control["events"]["selected_reaction"] != "petpet":
+            control["events"]["petpet_live"] = False
+        self._save_runtime_control(control)
+        self._sync_developer_panel()
+
+    def _trigger_selected_reaction(self):
+        if self.dev_reaction_combo.currentIndex() < 0:
+            return
+        control = self._load_runtime_control()
+        reaction_name = self.dev_reaction_combo.currentData() or self.dev_reaction_combo.currentText()
+        control["events"]["selected_reaction"] = str(reaction_name).strip().lower()
+        self._save_runtime_control(control)
+        self._send_runtime_command("trigger_reaction")
+
+    def _send_runtime_command(self, command_name):
+        if not self.config_data or self.preset_list.currentItem() is None:
+            return
+        if self.process is None or self.process.poll() is not None:
+            QMessageBox.information(self, "Developer Mode", "Сначала запустите аватар, затем используйте one-shot тесты.")
+            self.refresh_avatar_status()
+            return
+
+        control = self._load_runtime_control()
+        control["commands"][command_name] = time.time()
+        if command_name == "trigger_reaction" and control["events"].get("selected_reaction") == "petpet":
+            control["commands"]["trigger_petpet"] = control["commands"][command_name]
+        self._save_runtime_control(control)
+        self.refresh_avatar_status()
 
     def _mark_unsaved(self):
         if not self._changing_selection:
@@ -912,6 +1196,7 @@ class PresetManager(QMainWindow):
 
         self.avatar_status_label.style().unpolish(self.avatar_status_label)
         self.avatar_status_label.style().polish(self.avatar_status_label)
+        self._sync_developer_panel()
 
     def list_microphones(self):
         p = pyaudio.PyAudio()
@@ -989,6 +1274,7 @@ class PresetManager(QMainWindow):
             self.current_path_label.setText("")
             self._populate_sections()
             self.set_unsaved(False)
+            self._sync_developer_panel()
             return
 
         preset_name = item.text()
@@ -1005,6 +1291,7 @@ class PresetManager(QMainWindow):
         self.current_path_label.setText(os.path.abspath(os.path.join(PRESETS_DIR, preset_name)))
         self._populate_sections()
         self.set_unsaved(False)
+        self._sync_developer_panel()
 
     def save_config(self):
         item = self.preset_list.currentItem()
@@ -1041,6 +1328,7 @@ class PresetManager(QMainWindow):
 
         os.makedirs(path, exist_ok=True)
         os.makedirs(os.path.join(path, PRESET_AVATAR_DIR), exist_ok=True)
+        os.makedirs(os.path.join(path, PRESET_EMOTIONS_DIR), exist_ok=True)
 
         default_config = self._default_config_template()
 
@@ -1167,6 +1455,7 @@ class PresetManager(QMainWindow):
         self._normalize_config_data()
         self._populate_sections()
         self.set_unsaved(True)
+        self._sync_developer_panel()
 
 
 if __name__ == "__main__":

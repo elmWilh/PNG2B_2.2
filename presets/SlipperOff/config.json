@@ -40,9 +40,19 @@
       0.75
     ]
   },
+  "PetPet": {
+    "Enabled": true,
+    "Amplitude": 0.12,
+    "CycleDuration": 0.45,
+    "HandOffsetX": 0,
+    "HandOffsetY": 0,
+    "HandScale": 1.0,
+    "FrameCount": 5,
+    "EventDuration": 2.0
+  },
   "Movement": {
+    "Mode": "Squash",
     "JumpAmplitude": -14,
-    "DynamicSquashEnabled": true,
     "DynamicSquashAmount": 0.08,
     "VerticalSway": [
       0.0,
@@ -52,11 +62,12 @@
       0.0,
       0.0
     ],
-    "Mode": "Squash"
+    "DynamicSquashEnabled": true
   },
   "Mouth": {
     "FrameInterval": 0.05,
     "UseCloseDelay": true,
     "CloseDelay": 0.35
-  }
+  },
+  "DebugMode": true
 }
